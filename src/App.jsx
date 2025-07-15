@@ -1,12 +1,16 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Plus, Grid3X3, Send, X } from 'lucide-react';
+import { Plus, Grid3X3, Send, X, Download, ChevronDown } from 'lucide-react';
 
 const App = () => {
   const [applets, setApplets] = useState([]);
   const [newAppletName, setNewAppletName] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+  const [availablePanels, setAvailablePanels] = useState([]);
+  const [showImportDropdown, setShowImportDropdown] = useState(false);
+  const [isImporting, setIsImporting] = useState(false);
   const canvasRef = useRef(null);
   const animationFrameId = useRef(null);
+  const importDropdownRef = useRef(null);
 
   useEffect(() => {
     // Load applets from main process
@@ -18,6 +22,23 @@ const App = () => {
     // Request initial applets
     window.electronAPI.getApplets();
   }, []);
+
+  // Handle click outside to close import dropdown
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (importDropdownRef.current && !importDropdownRef.current.contains(event.target)) {
+        setShowImportDropdown(false);
+      }
+    };
+
+    if (showImportDropdown) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [showImportDropdown]);
 
   // Dotted background animation
   useEffect(() => {
@@ -121,6 +142,40 @@ const App = () => {
     }
   };
 
+  const handleImportClick = async () => {
+    if (!showImportDropdown) {
+      try {
+        const panels = await window.electronAPI.getAvailablePanels();
+        setAvailablePanels(panels);
+        setShowImportDropdown(true);
+      } catch (error) {
+        console.error('Error fetching available panels:', error);
+      }
+    } else {
+      setShowImportDropdown(false);
+    }
+  };
+
+  const handleImportPanel = async (panelId) => {
+    setIsImporting(true);
+    try {
+      const result = await window.electronAPI.importPanel(panelId);
+      if (result.error) {
+        console.error('Error importing panel:', result.error);
+      } else {
+        // Applet will be added to the list via the applets-updated event
+        setShowImportDropdown(false);
+        // Refresh available panels
+        const panels = await window.electronAPI.getAvailablePanels();
+        setAvailablePanels(panels);
+      }
+    } catch (error) {
+      console.error('Error importing panel:', error);
+    } finally {
+      setIsImporting(false);
+    }
+  };
+
   // Transform applets to match the display format
   const displayApplets = applets.filter(applet => applet && applet.caption).map(applet => {
     return {
@@ -166,6 +221,7 @@ const App = () => {
       }}>
         {/* Header */}
         <div style={{
+          position: 'relative',
           textAlign: 'center',
           marginBottom: '20px',
           paddingTop: '8px'
@@ -181,6 +237,149 @@ const App = () => {
             color: '#9ca3af',
             margin: '4px 0 0 0'
           }}>NikitOS</p>
+          
+          {/* Import button */}
+          <div style={{
+            position: 'absolute',
+            top: '8px',
+            right: '0px'
+          }}>
+            <div ref={importDropdownRef} style={{ position: 'relative' }}>
+              <button
+                onClick={handleImportClick}
+                disabled={isImporting}
+                style={{
+                  backgroundColor: 'rgba(17, 24, 39, 0.8)',
+                  border: '1px solid rgba(55, 65, 81, 0.5)',
+                  borderRadius: '8px',
+                  padding: '6px 10px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  cursor: isImporting ? 'wait' : 'pointer',
+                  transition: 'all 0.2s',
+                  backdropFilter: 'blur(8px)'
+                }}
+                onMouseEnter={(e) => {
+                  if (!isImporting) {
+                    e.currentTarget.style.backgroundColor = 'rgba(55, 65, 81, 0.8)';
+                    e.currentTarget.style.borderColor = 'rgba(75, 85, 99, 0.8)';
+                  }
+                }}
+                onMouseLeave={(e) => {
+                  if (!isImporting) {
+                    e.currentTarget.style.backgroundColor = 'rgba(17, 24, 39, 0.8)';
+                    e.currentTarget.style.borderColor = 'rgba(55, 65, 81, 0.5)';
+                  }
+                }}
+              >
+                {isImporting ? (
+                  <div style={{
+                    width: '12px',
+                    height: '12px',
+                    border: '2px solid #9ca3af',
+                    borderTop: '2px solid transparent',
+                    borderRadius: '50%',
+                    animation: 'spin 1s linear infinite'
+                  }} />
+                ) : (
+                  <Download size={12} color="#9ca3af" />
+                )}
+                <span style={{
+                  fontSize: '11px',
+                  color: '#9ca3af',
+                  fontWeight: '500'
+                }}>
+                  {isImporting ? 'Importing...' : 'Import'}
+                </span>
+                {!isImporting && (
+                  <ChevronDown 
+                    size={10} 
+                    color="#9ca3af" 
+                    style={{
+                      transform: showImportDropdown ? 'rotate(180deg)' : 'rotate(0deg)',
+                      transition: 'transform 0.2s'
+                    }}
+                  />
+                )}
+              </button>
+              
+              {/* Import dropdown */}
+              {showImportDropdown && (
+                <div style={{
+                  position: 'absolute',
+                  top: '100%',
+                  right: '0',
+                  marginTop: '4px',
+                  backgroundColor: 'rgba(17, 24, 39, 0.95)',
+                  border: '1px solid rgba(55, 65, 81, 0.8)',
+                  borderRadius: '8px',
+                  backdropFilter: 'blur(12px)',
+                  boxShadow: '0 8px 25px -8px rgba(0, 0, 0, 0.5)',
+                  minWidth: '200px',
+                  maxHeight: '200px',
+                  overflowY: 'auto',
+                  zIndex: 1000,
+                  animation: 'fadeIn 0.2s ease-out'
+                }}>
+                  {availablePanels.length > 0 ? (
+                    availablePanels.map((panel) => (
+                      <div
+                        key={panel.id}
+                        onClick={() => handleImportPanel(panel.id)}
+                        style={{
+                          padding: '8px 12px',
+                          cursor: 'pointer',
+                          borderBottom: '1px solid rgba(55, 65, 81, 0.3)',
+                          transition: 'background-color 0.2s'
+                        }}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.backgroundColor = 'rgba(55, 65, 81, 0.5)';
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.backgroundColor = 'transparent';
+                        }}
+                      >
+                        <div style={{
+                          fontSize: '12px',
+                          color: '#ffffff',
+                          fontWeight: '500',
+                          marginBottom: '2px'
+                        }}>
+                          {panel.name}
+                        </div>
+                        <div style={{
+                          fontSize: '10px',
+                          color: '#9ca3af',
+                          lineHeight: '1.3'
+                        }}>
+                          {panel.description}
+                        </div>
+                        <div style={{
+                          fontSize: '9px',
+                          color: '#6b7280',
+                          marginTop: '2px',
+                          textTransform: 'uppercase',
+                          letterSpacing: '0.5px'
+                        }}>
+                          {panel.type}
+                        </div>
+                      </div>
+                    ))
+                  ) : (
+                    <div style={{
+                      padding: '12px',
+                      textAlign: 'center',
+                      color: '#9ca3af',
+                      fontSize: '11px'
+                    }}>
+                      No available panels to import
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
         </div>
 
         {/* Center content area */}

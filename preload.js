@@ -16,5 +16,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   reopenApplet: (appletId) => ipcRenderer.invoke('reopen-applet', appletId),
   
   // Enhancement feature
-  enhancePanel: (panelId, userInput) => ipcRenderer.invoke('enhance-panel', panelId, userInput)
+  enhancePanel: (panelId, userInput) => ipcRenderer.invoke('enhance-panel', panelId, userInput),
+  
+  // Import functionality
+  getAvailablePanels: () => ipcRenderer.invoke('get-available-panels'),
+  importPanel: (panelId) => ipcRenderer.invoke('import-panel', panelId)
 });

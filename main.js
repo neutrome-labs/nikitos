@@ -815,3 +815,78 @@ ipcMain.handle('reopen-applet', (event, appletId) => {
     return { error: error.message };
   }
 });
+
+// Handle getting available panels from stdlib that are not used in any applet
+ipcMain.handle('get-available-panels', () => {
+  try {
+    // Get all panel IDs that are already used in applets
+    const usedPanelIds = new Set();
+    Object.values(applets).forEach(applet => {
+      applet.panels.forEach(panelId => usedPanelIds.add(panelId));
+    });
+
+    // Get all available panels that are not used
+    const availablePanels = Object.entries(panels)
+      .filter(([panelId, panel]) => !usedPanelIds.has(panelId))
+      .map(([panelId, panel]) => ({
+        id: panelId,
+        name: panel.title || panel.name || panelId,
+        description: panel.description || 'No description available',
+        type: panel.type || 'build'
+      }));
+
+    return availablePanels;
+  } catch (error) {
+    console.error('Error getting available panels:', error);
+    return [];
+  }
+});
+
+// Handle importing a panel as a new applet
+ipcMain.handle('import-panel', (event, panelId) => {
+  try {
+    const panel = panels[panelId];
+    if (!panel) {
+      return { error: 'Panel not found' };
+    }
+
+    // Check if panel is already used in an applet
+    const isUsed = Object.values(applets).some(applet => 
+      applet.panels.includes(panelId)
+    );
+    
+    if (isUsed) {
+      return { error: 'Panel is already used in an applet' };
+    }
+
+    // Create new applet wrapper for the panel
+    const appletId = Date.now().toString();
+    const colors = [
+      '#10b981', '#ef4444', '#eab308', '#a855f7',
+      '#6b7280', '#f97316', '#3b82f6', '#6366f1',
+      '#ec4899', '#14b8a6', '#06b6d4', '#10b981'
+    ];
+    const color = colors[Math.floor(Math.random() * colors.length)];
+    
+    const applet = {
+      id: appletId,
+      caption: panel.title || panel.name || 'Imported Panel',
+      color: color,
+      panels: [panelId]
+    };
+    
+    // Store the applet
+    applets[appletId] = applet;
+    saveApplets();
+    
+    // Notify the main window about the applet update
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('applets-updated', Object.values(applets));
+    }
+    
+    return { success: true, applet: applet };
+  } catch (error) {
+    console.error('Error importing panel:', error);
+    return { error: error.message };
+  }
+});
