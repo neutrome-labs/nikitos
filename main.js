@@ -95,7 +95,7 @@ function createTray() {
 }
 
 app.whenReady().then(() => {
-  loadPanels(); // Load panels from disk on startup
+  loadApplets(); // Load applets and panels from new file system
   createWindow();
   createTray();
 
@@ -111,32 +111,110 @@ app.on('window-all-closed', function () {
   }
 });
 
-// Data persistence
-const dataPath = path.join(app.getPath('userData'), 'panels.json');
-console.log('Data path:', dataPath);
+// Data persistence paths
+const appletsDataPath = path.join(app.getPath('userData'), 'applets.json');
+const stdlibPath = path.join(app.getPath('userData'), 'stdlib');
+console.log('Applets data path:', appletsDataPath);
+console.log('Stdlib path:', stdlibPath);
 
-// Load panels from disk
-function loadPanels() {
+// Ensure stdlib directory exists
+if (!fs.existsSync(stdlibPath)) {
+  fs.mkdirSync(stdlibPath, { recursive: true });
+  console.log('Created stdlib directory');
+}
+
+// Load applets and panels from new file system
+function loadApplets() {
   try {
-    if (fs.existsSync(dataPath)) {
-      const data = fs.readFileSync(dataPath, 'utf8');
-      const loadedPanels = JSON.parse(data);
-      Object.assign(panels, loadedPanels);
-      console.log('Panels loaded from disk:', Object.keys(panels).length);
+    // Load applets metadata
+    if (fs.existsSync(appletsDataPath)) {
+      const data = fs.readFileSync(appletsDataPath, 'utf8');
+      const loadedApplets = JSON.parse(data);
+      Object.assign(applets, loadedApplets);
+      console.log('Applets loaded from disk:', Object.keys(applets).length);
+    }
+
+    // Load panels from stdlib directory
+    if (fs.existsSync(stdlibPath)) {
+      const panelDirs = fs.readdirSync(stdlibPath, { withFileTypes: true })
+        .filter(dirent => dirent.isDirectory())
+        .map(dirent => dirent.name);
+
+      for (const panelId of panelDirs) {
+        const panelDir = path.join(stdlibPath, panelId);
+        const packageJsonPath = path.join(panelDir, 'package.json');
+        
+        if (fs.existsSync(packageJsonPath)) {
+          try {
+            const packageData = fs.readFileSync(packageJsonPath, 'utf8');
+            const panelMetadata = JSON.parse(packageData);
+            panels[panelId] = panelMetadata;
+            console.log('Panel loaded:', panelId);
+          } catch (error) {
+            console.error(`Error loading panel ${panelId}:`, error);
+          }
+        }
+      }
+      console.log('Panels loaded from stdlib:', Object.keys(panels).length);
     }
   } catch (error) {
-    console.error('Error loading panels:', error);
+    console.error('Error loading applets:', error);
   }
 }
 
-// Save panels to disk
-function savePanels() {
+// Save applets to disk
+function saveApplets() {
   try {
-    fs.writeFileSync(dataPath, JSON.stringify(panels, null, 2));
-    console.log('Panels saved to disk');
+    fs.writeFileSync(appletsDataPath, JSON.stringify(applets, null, 2));
+    console.log('Applets saved to disk');
   } catch (error) {
-    console.error('Error saving panels:', error);
+    console.error('Error saving applets:', error);
   }
+}
+
+// Save panel to stdlib directory
+function savePanel(panelId, metadata, htmlContent = null) {
+  try {
+    const panelDir = path.join(stdlibPath, panelId);
+    
+    // Create panel directory if it doesn't exist
+    if (!fs.existsSync(panelDir)) {
+      fs.mkdirSync(panelDir, { recursive: true });
+    }
+
+    // Save package.json with metadata
+    const packageJsonPath = path.join(panelDir, 'package.json');
+    fs.writeFileSync(packageJsonPath, JSON.stringify(metadata, null, 2));
+
+    // Save index.html for build type panels
+    if (htmlContent && metadata.type === 'build') {
+      const indexHtmlPath = path.join(panelDir, 'index.html');
+      fs.writeFileSync(indexHtmlPath, htmlContent);
+      console.log('Panel HTML saved:', panelId);
+    }
+
+    console.log('Panel metadata saved:', panelId);
+  } catch (error) {
+    console.error('Error saving panel:', error);
+  }
+}
+
+// Delete panel from stdlib directory
+function deletePanel(panelId) {
+  try {
+    const panelDir = path.join(stdlibPath, panelId);
+    if (fs.existsSync(panelDir)) {
+      fs.rmSync(panelDir, { recursive: true, force: true });
+      console.log('Panel directory deleted:', panelId);
+    }
+  } catch (error) {
+    console.error('Error deleting panel directory:', error);
+  }
+}
+
+// Get panel HTML file path
+function getPanelHtmlPath(panelId) {
+  return path.join(stdlibPath, panelId, 'index.html');
 }
 
 let systemPromptCache = {};
@@ -343,41 +421,16 @@ function createEnhanceWindow(panelId, currentContent) {
 }
 
 const panels = {};
+const applets = {};
 
-// Handle getting all panels
-ipcMain.handle('get-panels', () => {
-  const panelValues = Object.values(panels);
-  // Also send panels-updated event to ensure UI is synchronized
+// Handle getting all applets
+ipcMain.handle('get-applets', () => {
+  const appletValues = Object.values(applets);
+  // Also send applets-updated event to ensure UI is synchronized
   if (mainWindow && !mainWindow.isDestroyed()) {
-    mainWindow.webContents.send('panels-updated', panelValues);
+    mainWindow.webContents.send('applets-updated', appletValues);
   }
-  return panelValues;
-});
-
-// Handle creating a new panel with just a name
-ipcMain.handle('create-panel', async (event, name) => {
-  const panelId = Date.now().toString();
-  const colors = [
-    '#10b981', '#ef4444', '#eab308', '#a855f7',
-    '#6b7280', '#f97316', '#3b82f6', '#6366f1',
-    '#ec4899', '#14b8a6', '#06b6d4', '#10b981'
-  ];
-  const randomColor = colors[Math.floor(Math.random() * colors.length)];
-  
-  const newPanel = {
-    id: panelId,
-    name: name,
-    color: randomColor
-  };
-  panels[panelId] = newPanel;
-  savePanels(); // Save to disk
-  
-    // Notify only the main window about the update
-    if (mainWindow && !mainWindow.isDestroyed()) {
-      mainWindow.webContents.send('panels-updated', Object.values(panels));
-    }
-  
-  return newPanel;
+  return appletValues;
 });
 
 ipcMain.handle('add-panel', async (event, request) => {
@@ -416,12 +469,27 @@ ipcMain.handle('add-panel', async (event, request) => {
       '#ec4899', '#14b8a6', '#06b6d4', '#10b981'
     ];
     metadata.color = colors[Math.floor(Math.random() * colors.length)];
-    panels[metadata.id] = metadata;
-    savePanels(); // Save to disk
     
-    // Notify only the main window about the update
+    // Create applet wrapper for the panel metadata
+    const appletId = Date.now().toString();
+    const applet = {
+      id: appletId,
+      caption: metadata.title || metadata.name || 'Untitled',
+      color: metadata.color,
+      panels: [metadata.id]
+    };
+    
+    // Store panel and applet
+    panels[metadata.id] = metadata;
+    applets[appletId] = applet;
+    
+    // Save to new file system
+    savePanel(metadata.id, metadata);
+    saveApplets();
+    
+    // Notify the main window about the applet update
     if (mainWindow && !mainWindow.isDestroyed()) {
-      mainWindow.webContents.send('panels-updated', Object.values(panels));
+      mainWindow.webContents.send('applets-updated', Object.values(applets));
     }
 
     const panelWindow = new BrowserWindow({
@@ -440,7 +508,7 @@ ipcMain.handle('add-panel', async (event, request) => {
       const bounds = panelWindow.getBounds();
       panels[metadata.id].initialWidth = bounds.width - 40;
       panels[metadata.id].initialHeight = bounds.height - 60;
-      savePanels();
+      savePanel(metadata.id, panels[metadata.id]);
       console.log('Panel size saved:', metadata.id, bounds.width - 40, bounds.height - 60);
     });
 
@@ -453,7 +521,11 @@ ipcMain.handle('add-panel', async (event, request) => {
             {
               label: 'Enhance',
               click: () => {
-                createEnhanceWindow(metadata.id, panels[metadata.id].content);
+                const htmlPath = getPanelHtmlPath(metadata.id);
+                if (fs.existsSync(htmlPath)) {
+                  const currentContent = fs.readFileSync(htmlPath, 'utf8');
+                  createEnhanceWindow(metadata.id, currentContent);
+                }
               }
             }
           ]
@@ -479,7 +551,6 @@ ipcMain.handle('add-panel', async (event, request) => {
                 document.body.innerText = rawData;
               });
               window.electronAPI.onStreamEnd(() => {
-                document.body.innerHTML = \`<iframe src="data:text/html;charset=utf-8,\${encodeURIComponent(rawData)}" style="width:100%; height:100%; border:none;"></iframe>\`;
                 window.electronAPI.saveContent(panelId, rawData);
               });
             </script>
@@ -522,8 +593,10 @@ ipcMain.handle('add-panel', async (event, request) => {
             for (const line of filtered) {
               const data = line.replace(/^data: /, '');
               if (data.trim() === '[DONE]') {
-                panels[metadata.id].content = content;
-                savePanels(); // Save to disk when content is complete
+                // Save HTML content to file and navigate to it
+                savePanel(metadata.id, metadata, content);
+                const htmlPath = getPanelHtmlPath(metadata.id);
+                panelWindow.loadFile(htmlPath);
                 panelWindow.webContents.send('stream-end');
                 return;
               }
@@ -550,63 +623,12 @@ ipcMain.handle('add-panel', async (event, request) => {
   }
 });
 
-ipcMain.handle('reopen-panel', (event, panelId) => {
-  const panel = panels[panelId];
-  if (panel) {
-    const panelWindow = new BrowserWindow({
-      width: panel.initialWidth,
-      height: panel.initialHeight,
-      title: panel.title,
-      webPreferences: {
-        preload: path.join(__dirname, 'preload.js'),
-        nodeIntegration: false,
-        contextIsolation: true,
-      }
-    });
-
-    // Save window size when closing
-    panelWindow.on('close', () => {
-      const bounds = panelWindow.getBounds();
-      panels[panelId].initialWidth = bounds.width;
-      panels[panelId].initialHeight = bounds.height;
-      savePanels();
-      console.log('Panel size saved:', panelId, bounds.width, bounds.height);
-    });
-
-    // Add menu bar for build type panels
-    if (panel.type === 'build') {
-      const menuTemplate = [
-        {
-          label: 'Edit',
-          submenu: [
-            {
-              label: 'Enhance',
-              click: () => {
-                createEnhanceWindow(panelId, panel.content);
-              }
-            }
-          ]
-        }
-      ];
-      const menu = Menu.buildFromTemplate(menuTemplate);
-      panelWindow.setMenu(menu);
-    }
-
-    if (panel.type === 'web') {
-      panelWindow.loadURL(panel.alpha);
-    } else {
-      panelWindow.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(panel.content)}`);
-    }
-  }
-});
-
 // Handle saving content for panels
 ipcMain.handle('save-content', (event, panelId, content) => {
-  // Save content for the specific panel ID
   try {
     if (panels[panelId]) {
-      panels[panelId].content = content;
-      savePanels(); // Save to disk
+      // Save HTML content to file
+      savePanel(panelId, panels[panelId], content);
       console.log('Content saved for panel:', panelId);
       return true;
     } else {
@@ -619,29 +641,6 @@ ipcMain.handle('save-content', (event, panelId, content) => {
   }
 });
 
-// Handle panel deletion
-ipcMain.handle('delete-panel', (event, panelId) => {
-  try {
-    if (panels[panelId]) {
-      delete panels[panelId];
-      savePanels(); // Save to disk
-      console.log('Panel deleted:', panelId);
-      
-      // Notify the main window about the update
-      if (mainWindow && !mainWindow.isDestroyed()) {
-        mainWindow.webContents.send('panels-updated', Object.values(panels));
-      }
-      
-      return { success: true };
-    } else {
-      return { error: 'Panel not found' };
-    }
-  } catch (error) {
-    console.error('Error deleting panel:', error);
-    return { error: error.message };
-  }
-});
-
 // Handle panel enhancement
 ipcMain.handle('enhance-panel', async (event, panelId, userInput) => {
   try {
@@ -649,6 +648,13 @@ ipcMain.handle('enhance-panel', async (event, panelId, userInput) => {
     if (!panel || panel.type !== 'build') {
       throw new Error('Panel not found or not a build type panel');
     }
+
+    const htmlPath = getPanelHtmlPath(panelId);
+    if (!fs.existsSync(htmlPath)) {
+      throw new Error('Panel HTML file not found');
+    }
+
+    const currentContent = fs.readFileSync(htmlPath, 'utf8');
 
     const response = await fetch(process.env.OPENAI_COMPLETIONS_URL, {
       method: 'POST',
@@ -660,7 +666,7 @@ ipcMain.handle('enhance-panel', async (event, panelId, userInput) => {
       body: JSON.stringify({
         model: process.env.OPENAI_RENDERER_FAST,
         messages: [
-          { role: 'user', content: panel.content },
+          { role: 'user', content: currentContent },
           { role: 'user', content: userInput }
         ]
       })
@@ -674,21 +680,138 @@ ipcMain.handle('enhance-panel', async (event, panelId, userInput) => {
     const data = await response.json();
     const enhancedContent = data.choices[0].message.content;
     
-    // Update panel content
-    panels[panelId].content = enhancedContent;
-    savePanels(); // Save to disk
+    // Save enhanced content to file
+    savePanel(panelId, panel, enhancedContent);
     
     // Find and update any open panel windows
     const allWindows = BrowserWindow.getAllWindows();
     for (const window of allWindows) {
       if (window.getTitle() === panel.title && !window.isDestroyed()) {
-        window.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(enhancedContent)}`);
+        window.loadFile(htmlPath);
       }
     }
     
     return { success: true };
   } catch (error) {
     console.error('Error in enhance-panel:', error);
+    return { error: error.message };
+  }
+});
+
+// Handle applet deletion
+ipcMain.handle('delete-applet', (event, appletId) => {
+  try {
+    const applet = applets[appletId];
+    if (applet) {
+      // Delete all panels associated with this applet
+      applet.panels.forEach(panelId => {
+        if (panels[panelId]) {
+          deletePanel(panelId);
+          delete panels[panelId];
+          console.log('Panel deleted from applet:', panelId);
+        }
+      });
+      
+      // Delete the applet itself
+      delete applets[appletId];
+      saveApplets();
+      console.log('Applet deleted:', appletId);
+      
+      // Notify the main window about the update
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('applets-updated', Object.values(applets));
+      }
+      
+      return { success: true };
+    } else {
+      return { error: 'Applet not found' };
+    }
+  } catch (error) {
+    console.error('Error deleting applet:', error);
+    return { error: error.message };
+  }
+});
+
+// Handle applet reopening (opens the first panel of the applet)
+ipcMain.handle('reopen-applet', (event, appletId) => {
+  try {
+    const applet = applets[appletId];
+    if (applet && applet.panels.length > 0) {
+      // For now, just open the first panel in the applet
+      const firstPanelId = applet.panels[0];
+      const panel = panels[firstPanelId];
+      
+      if (panel) {
+        const panelWindow = new BrowserWindow({
+          width: panel.initialWidth || 800,
+          height: panel.initialHeight || 600,
+          title: panel.title || panel.name || applet.caption,
+          webPreferences: {
+            preload: path.join(__dirname, 'preload.js'),
+            nodeIntegration: false,
+            contextIsolation: true,
+          }
+        });
+
+        // Save window size when closing
+        panelWindow.on('close', () => {
+          const bounds = panelWindow.getBounds();
+          panels[firstPanelId].initialWidth = bounds.width;
+          panels[firstPanelId].initialHeight = bounds.height;
+          savePanel(firstPanelId, panels[firstPanelId]);
+          console.log('Panel size saved:', firstPanelId, bounds.width, bounds.height);
+        });
+
+        // Add menu bar for build type panels
+        if (panel.type === 'build') {
+          const menuTemplate = [
+            {
+              label: 'Enhance',
+              click: () => {
+                const htmlPath = getPanelHtmlPath(firstPanelId);
+                if (fs.existsSync(htmlPath)) {
+                  const currentContent = fs.readFileSync(htmlPath, 'utf8');
+                  createEnhanceWindow(firstPanelId, currentContent);
+                }
+              }
+            }
+          ];
+          const menu = Menu.buildFromTemplate(menuTemplate);
+          panelWindow.setMenu(menu);
+        }
+
+        if (panel.type === 'web') {
+          panelWindow.loadURL(panel.alpha);
+        } else {
+          // Load from HTML file if it exists
+          const htmlPath = getPanelHtmlPath(firstPanelId);
+          if (fs.existsSync(htmlPath)) {
+            panelWindow.loadFile(htmlPath);
+          } else {
+            // Simple panel without content TODO this should not be called ever
+            const simpleHTML = `
+              <!DOCTYPE html>
+              <html>
+                <head><title>${panel.name || applet.caption}</title></head>
+                <body style="font-family: Arial, sans-serif; padding: 20px; background: #f5f5f5;">
+                  <h1>${panel.name || applet.caption}</h1>
+                  <p>This is a simple panel. Content will be added here.</p>
+                </body>
+              </html>
+            `;
+            panelWindow.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(simpleHTML)}`);
+          }
+        }
+        
+        return { success: true };
+      } else {
+        return { error: 'Panel not found' };
+      }
+    } else {
+      return { error: 'Applet not found or has no panels' };
+    }
+  } catch (error) {
+    console.error('Error reopening applet:', error);
     return { error: error.message };
   }
 });

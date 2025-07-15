@@ -2,21 +2,21 @@ import React, { useState, useRef, useEffect } from 'react';
 import { Plus, Grid3X3, Send, X } from 'lucide-react';
 
 const App = () => {
-  const [panels, setPanels] = useState([]);
-  const [newPanelName, setNewPanelName] = useState("");
+  const [applets, setApplets] = useState([]);
+  const [newAppletName, setNewAppletName] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const canvasRef = useRef(null);
   const animationFrameId = useRef(null);
 
   useEffect(() => {
-    // Load panels from main process
-    window.electronAPI.onPanelsUpdate((newPanels) => {
-      console.log('Received panels update:', newPanels);
-      setPanels(newPanels);
+    // Load applets from main process
+    window.electronAPI.onAppletsUpdate((newApplets) => {
+      console.log('Received applets update:', newApplets);
+      setApplets(newApplets);
     });
 
-    // Request initial panels
-    window.electronAPI.getPanels();
+    // Request initial applets
+    window.electronAPI.getApplets();
   }, []);
 
   // Dotted background animation
@@ -81,54 +81,53 @@ const App = () => {
     };
   }, []);
 
-  const handlePanelClick = (panel) => {
-    console.log("Panel clicked:", panel.id);
-    // Reopen the existing panel
-    window.electronAPI.reopenPanel(panel.id);
+  const handleAppletClick = (applet) => {
+    console.log("Applet clicked:", applet.id);
+    // Reopen the applet (which will open its first panel)
+    window.electronAPI.reopenApplet(applet.id);
   };
 
-  const handleDeletePanel = async (e, panelId) => {
-    e.stopPropagation(); // Prevent panel click when clicking delete
+  const handleDeleteApplet = async (e, appletId) => {
+    e.stopPropagation(); // Prevent applet click when clicking delete
     try {
-      const result = await window.electronAPI.deletePanel(panelId);
+      const result = await window.electronAPI.deleteApplet(appletId);
       if (result.error) {
-        console.error('Error deleting panel:', result.error);
+        console.error('Error deleting applet:', result.error);
       }
-      // Panel will be removed from the list via the panels-updated event
+      // Applet will be removed from the list via the applets-updated event
     } catch (error) {
-      console.error('Error deleting panel:', error);
+      console.error('Error deleting applet:', error);
     }
   };
 
-  const handleCreatePanel = async (e) => {
+  const handleCreateApplet = async (e) => {
     e.preventDefault();
-    if (newPanelName.trim() && !isLoading) {
+    if (newAppletName.trim() && !isLoading) {
       setIsLoading(true);
       try {
-        // Use the AI metadata generation instead of simple panel creation
-        const result = await window.electronAPI.addPanel(newPanelName.trim());
+        // Use the AI metadata generation to create panel and applet
+        const result = await window.electronAPI.addPanel(newAppletName.trim());
         if (result && !result.error) {
-          // Panel will be added to the list via the panels-updated event
-          setNewPanelName("");
+          // Applet will be added to the list via the applets-updated event
+          setNewAppletName("");
         } else {
-          console.error('Error creating panel:', result?.error);
+          console.error('Error creating applet:', result?.error);
         }
       } catch (error) {
-        console.error('Error creating panel:', error);
+        console.error('Error creating applet:', error);
       } finally {
         setIsLoading(false);
       }
     }
   };
 
-  // Transform panels to match the app format - handle both name and title properties
-  const displayPanels = panels.filter(panel => panel && (panel.name || panel.title)).map(panel => {
-    const displayName = panel.name || panel.title;
+  // Transform applets to match the display format
+  const displayApplets = applets.filter(applet => applet && applet.caption).map(applet => {
     return {
-      id: panel.id,
-      name: displayName,
-      letter: displayName.charAt(0).toUpperCase(),
-      color: panel.color
+      id: applet.id,
+      name: applet.caption,
+      letter: applet.caption.charAt(0).toUpperCase(),
+      color: applet.color
     };
   });
 
@@ -176,12 +175,12 @@ const App = () => {
             fontWeight: '600',
             color: '#ffffff',
             margin: 0
-          }}>Nikitos</h1>
+          }}>Applets</h1>
           <p style={{
             fontSize: '12px',
             color: '#9ca3af',
             margin: '4px 0 0 0'
-          }}>Panel Manager</p>
+          }}>NikitOS</p>
         </div>
 
         {/* Center content area */}
@@ -192,16 +191,16 @@ const App = () => {
           justifyContent: 'center'
         }}>
           <div style={{ width: '100%', maxWidth: '320px' }}>
-            {displayPanels.length > 0 ? (
+            {displayApplets.length > 0 ? (
               <div style={{
                 display: 'grid',
                 gridTemplateColumns: 'repeat(3, 1fr)',
                 gap: '16px'
               }}>
-                {displayPanels.map((panel, index) => (
+                {displayApplets.map((applet, index) => (
                   <div
-                    key={panel.id}
-                    onClick={() => handlePanelClick(panel)}
+                    key={applet.id}
+                    onClick={() => handleAppletClick(applet)}
                     style={{
                       display: 'flex',
                       flexDirection: 'column',
@@ -232,7 +231,7 @@ const App = () => {
                           display: 'flex',
                           alignItems: 'center',
                           justifyContent: 'center',
-                          backgroundColor: panel.color,
+                          backgroundColor: applet.color,
                           color: '#ffffff',
                           fontWeight: 'bold',
                           fontSize: '20px',
@@ -240,12 +239,12 @@ const App = () => {
                           transition: 'box-shadow 0.2s'
                         }}
                       >
-                        {panel.letter}
+                        {applet.letter}
                       </div>
                       {/* Delete button */}
                       <button
                         className="delete-btn"
-                        onClick={(e) => handleDeletePanel(e, panel.id)}
+                        onClick={(e) => handleDeleteApplet(e, applet.id)}
                         style={{
                           position: 'absolute',
                           top: '-4px',
@@ -286,7 +285,7 @@ const App = () => {
                       textOverflow: 'ellipsis',
                       whiteSpace: 'nowrap'
                     }}>
-                      {panel.name}
+                      {applet.name}
                     </span>
                   </div>
                 ))}
@@ -329,25 +328,25 @@ const App = () => {
                     fontWeight: '500',
                     fontSize: '14px',
                     marginBottom: '6px'
-                  }}>No Panels Yet</h2>
+                  }}>No Applets Yet</h2>
                   <p style={{
                     fontSize: '12px',
                     color: '#9ca3af'
-                  }}>Create your first panel below</p>
+                  }}>Create your first applet below</p>
                 </div>
               </div>
             )}
           </div>
         </div>
 
-        {/* Add panel bar at bottom */}
+        {/* Add applet bar at bottom */}
         <div style={{
           paddingTop: '16px'
         }}>
           <div style={{
             animation: 'slideUp 0.5s ease-out 0.2s both'
           }}>
-            <form onSubmit={handleCreatePanel}>
+            <form onSubmit={handleCreateApplet}>
               <div style={{
                 position: 'relative',
                 display: 'flex',
@@ -367,9 +366,9 @@ const App = () => {
                 }} />
                 <input
                   type="text"
-                  placeholder={isLoading ? "Generating panel..." : "Create new panel..."}
-                  value={newPanelName}
-                  onChange={(e) => setNewPanelName(e.target.value)}
+                  placeholder={isLoading ? "Generating applet..." : "Create new applet..."}
+                  value={newAppletName}
+                  onChange={(e) => setNewAppletName(e.target.value)}
                   disabled={isLoading}
                   style={{
                     flex: 1,
@@ -387,11 +386,11 @@ const App = () => {
                 />
                 <button
                   type="submit"
-                  disabled={!newPanelName.trim() || isLoading}
+                  disabled={!newAppletName.trim() || isLoading}
                   style={{
                     position: 'absolute',
                     right: '6px',
-                    backgroundColor: isLoading ? '#f59e0b' : (newPanelName.trim() ? '#2563eb' : '#374151'),
+                    backgroundColor: isLoading ? '#f59e0b' : (newAppletName.trim() ? '#2563eb' : '#374151'),
                     borderRadius: '9999px',
                     width: '32px',
                     height: '32px',
@@ -399,16 +398,16 @@ const App = () => {
                     alignItems: 'center',
                     justifyContent: 'center',
                     border: 'none',
-                    cursor: isLoading ? 'wait' : (newPanelName.trim() ? 'pointer' : 'not-allowed'),
+                    cursor: isLoading ? 'wait' : (newAppletName.trim() ? 'pointer' : 'not-allowed'),
                     transition: 'background-color 0.2s'
                   }}
                   onMouseEnter={(e) => {
-                    if (newPanelName.trim() && !isLoading) {
+                    if (newAppletName.trim() && !isLoading) {
                       e.currentTarget.style.backgroundColor = '#1d4ed8';
                     }
                   }}
                   onMouseLeave={(e) => {
-                    if (newPanelName.trim() && !isLoading) {
+                    if (newAppletName.trim() && !isLoading) {
                       e.currentTarget.style.backgroundColor = '#2563eb';
                     } else if (isLoading) {
                       e.currentTarget.style.backgroundColor = '#f59e0b';
