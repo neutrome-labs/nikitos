@@ -4,6 +4,7 @@ import { defineConfig } from "vite"
 
 export default defineConfig({
   plugins: [react()],
+  root: path.resolve(__dirname, "src"),
   base: './',
   resolve: {
     alias: {
@@ -11,6 +12,7 @@ export default defineConfig({
     },
   },
   build: {
-    outDir: 'dist',
+    outDir: '../dist',
+    emptyOutDir: true,
   },
 })

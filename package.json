@@ -2,7 +2,7 @@
   "name": "nikitos",
   "version": "1.0.0",
   "description": "My Electron application",
-  "main": "main.js",
+  "main": "app/main.js",
   "type": "commonjs",
   "private": true,
   "devDependencies": {
@@ -31,8 +31,8 @@
   "build": {
     "files": [
       "dist/**/*",
-      "main.js",
-      "preload.js"
+      "app/**/*",
+      "prompt-*"
     ],
     "directories": {
       "output": "release"

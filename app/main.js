@@ -32,7 +32,7 @@ function createWindow () {
     // Open DevTools for debugging
     // mainWindow.webContents.openDevTools();
   } else {
-    mainWindow.loadFile(path.join(__dirname, 'dist', 'index.html'));
+    mainWindow.loadFile(path.join(__dirname, '..', 'dist', 'index.html'));
   }
 
   // Hide window instead of closing
@@ -239,7 +239,7 @@ function tryPrependWithSystemFile(systemPromptFile, messages) {
 
   if (!systemPromptCache[systemPromptFile]) {
     try {
-      const systemPromptPath = path.join(__dirname, systemPromptFile);
+      const systemPromptPath = path.join(__dirname, '..', systemPromptFile);
       if (fs.existsSync(systemPromptPath)) {
         const systemPromptContent = fs.readFileSync(systemPromptPath, 'utf8');
         systemPromptCache[systemPromptFile] = { role: 'system', content: systemPromptContent };
