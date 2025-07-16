@@ -41,6 +41,11 @@ bun install  # or npm install
 # Set up your environment
 cp .env.example .env # Then add your OpenAI API key to the .env file
 
+# Download `stdlib` (if applicable)
+git clone git@github.com:neutrome-labs/nikitos-stdlib.git ~/.config/nikitos/stdlib
+# on Windows
+git clone git@github.com:neutrome-labs/nikitos-stdlib.git %AppData%\\nikitos\\stdlib
+
 # Run the app
 bun run dev # or npm run dev
 ```

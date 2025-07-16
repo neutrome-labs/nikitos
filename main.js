@@ -501,8 +501,7 @@ ipcMain.handle('add-panel', async (event, request) => {
     panels[metadata.id] = metadata;
     applets[appletId] = applet;
     
-    // Save to new file system
-    savePanel(metadata.id, metadata);
+    // Save applet metadata only (builders will handle panel content)
     saveApplets();
     
     // Notify the main window about the applet update
@@ -526,7 +525,13 @@ ipcMain.handle('add-panel', async (event, request) => {
       const bounds = panelWindow.getBounds();
       panels[metadata.id].initialWidth = bounds.width - 40;
       panels[metadata.id].initialHeight = bounds.height - 60;
-      savePanel(metadata.id, panels[metadata.id]);
+      // Only save metadata (package.json), builders handle content
+      const panelDir = path.join(stdlibPath, metadata.id);
+      if (!fs.existsSync(panelDir)) {
+        fs.mkdirSync(panelDir, { recursive: true });
+      }
+      const packageJsonPath = path.join(panelDir, 'package.json');
+      fs.writeFileSync(packageJsonPath, JSON.stringify(panels[metadata.id], null, 2));
       console.log('Panel size saved:', metadata.id, bounds.width - 40, bounds.height - 60);
     });
 
@@ -585,7 +590,7 @@ ipcMain.handle('add-panel', async (event, request) => {
       (async () => {
         try {
           console.log(`Building panel with complexity: ${metadata.complexity || 'unknown'}`);
-          await builderFactory.build(metadata, request, panelWindow, savePanel, tryPrependWithSystemFile);
+          await builderFactory.build(metadata, request, panelWindow, tryPrependWithSystemFile);
         } catch (error) {
           console.error('Error building panel:', error);
           // Show error in panel window
@@ -646,45 +651,66 @@ ipcMain.handle('enhance-panel', async (event, panelId, userInput) => {
       throw new Error('Panel not found or not a build type panel');
     }
 
-    const htmlPath = getPanelHtmlPath(panelId);
-    if (!fs.existsSync(htmlPath)) {
-      throw new Error('Panel HTML file not found');
-    }
+    const complexity = panel.complexity || 1;
+    console.log(`Enhancing panel ${panelId} with complexity ${complexity}`);
 
-    const currentContent = fs.readFileSync(htmlPath, 'utf8');
-
-    const response = await fetch(process.env.OPENAI_COMPLETIONS_URL, {
-      method: 'POST',
-      headers: {
-        'User-Agent': 'NeutromeLabs/AiGateway',
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`
-      },
-      body: JSON.stringify({
-        model: process.env.OPENAI_RENDERER_FAST,
-        messages: [
-          { role: 'user', content: currentContent },
-          { role: 'user', content: userInput }
-        ]
-      })
-    });
-
-    if (!response.ok) {
-      console.error('Error fetching from renderer API:', await response.text());
-      throw new Error(`HTTP error! status: ${response.status}`);
-    }
-
-    const data = await response.json();
-    const enhancedContent = data.choices[0].message.content;
+    let tempWindow = null;
     
-    // Save enhanced content to file
-    savePanel(panelId, panel, enhancedContent);
+    // Create temporary window for complex builder streaming
+    if (complexity > (process.env.COMPLEX_RENDERER_THRESHOLD || 2)) {
+      tempWindow = new BrowserWindow({
+        width: 400,
+        height: 300,
+        show: false, // Hidden window for streaming
+        webPreferences: {
+          preload: path.join(__dirname, 'preload.js'),
+          nodeIntegration: false,
+          contextIsolation: true,
+        }
+      });
+
+      const loadingHTML = `
+        <!DOCTYPE html>
+        <html>
+          <head><title>Enhancement Processing</title></head>
+          <body>
+            <script>
+              let rawData = '';
+              window.electronAPI.onStreamData((data) => {
+                rawData += data;
+              });
+              window.electronAPI.onStreamEnd(() => {
+                console.log('Enhancement streaming completed');
+              });
+            </script>
+            <div>Processing enhancement...</div>
+          </body>
+        </html>
+      `;
+      tempWindow.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(loadingHTML)}`);
+    }
+
+    // Use builder factory to handle enhancement (builders handle all file operations)
+    await builderFactory.enhance(
+      panel, 
+      userInput, 
+      tempWindow, 
+      tryPrependWithSystemFile
+    );
+
+    // Close temporary window if created
+    if (tempWindow && !tempWindow.isDestroyed()) {
+      tempWindow.close();
+    }
     
     // Find and update any open panel windows
     const allWindows = BrowserWindow.getAllWindows();
     for (const window of allWindows) {
       if (window.getTitle() === panel.title && !window.isDestroyed()) {
-        window.loadFile(htmlPath);
+        const htmlPath = getPanelHtmlPath(panelId);
+        if (fs.existsSync(htmlPath)) {
+          window.loadFile(htmlPath);
+        }
       }
     }
     
@@ -755,7 +781,13 @@ ipcMain.handle('reopen-applet', (event, appletId) => {
           const bounds = panelWindow.getBounds();
           panels[firstPanelId].initialWidth = bounds.width;
           panels[firstPanelId].initialHeight = bounds.height;
-          savePanel(firstPanelId, panels[firstPanelId]);
+          // Only save metadata (package.json), builders handle content
+          const panelDir = path.join(stdlibPath, firstPanelId);
+          if (!fs.existsSync(panelDir)) {
+            fs.mkdirSync(panelDir, { recursive: true });
+          }
+          const packageJsonPath = path.join(panelDir, 'package.json');
+          fs.writeFileSync(packageJsonPath, JSON.stringify(panels[firstPanelId], null, 2));
           console.log('Panel size saved:', firstPanelId, bounds.width, bounds.height);
         });
 

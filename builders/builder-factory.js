@@ -32,13 +32,33 @@ class BuilderFactory {
    * @param {Object} metadata - Panel metadata from thinker
    * @param {string} request - Original user request
    * @param {BrowserWindow} panelWindow - The panel window to stream to
-   * @param {Function} savePanel - Function to save panel content
    * @param {Function} tryPrependWithSystemFile - Function to add system prompts
    * @returns {Promise<void>}
    */
-  async build(metadata, request, panelWindow, savePanel, tryPrependWithSystemFile) {
+  async build(metadata, request, panelWindow, tryPrependWithSystemFile) {
     const builder = this.getBuilder(metadata);
-    return await builder.build(metadata, request, panelWindow, savePanel, tryPrependWithSystemFile);
+    return await builder.build(metadata, request, panelWindow, tryPrependWithSystemFile);
+  }
+
+  /**
+   * Enhance a panel using the appropriate builder
+   * @param {Object} metadata - Panel metadata
+   * @param {string} userInput - User enhancement instructions
+   * @param {BrowserWindow} panelWindow - The panel window to stream to (for complex builder)
+   * @param {Function} tryPrependWithSystemFile - Function to add system prompts
+   * @returns {Promise<void>} - Both builders handle their own file operations
+   */
+  async enhance(metadata, userInput, panelWindow, tryPrependWithSystemFile) {
+    const builder = this.getBuilder(metadata);
+    const complexity = metadata.complexity || 1;
+    
+    if (complexity <= process.env.COMPLEX_RENDERER_THRESHOLD) {
+      // Simple builder: handles reading current content internally and saves enhanced content
+      return await builder.enhance(metadata, userInput, tryPrependWithSystemFile);
+    } else {
+      // Complex builder: pass only user input, AI will edit files directly via mount
+      return await builder.enhance(metadata, userInput, panelWindow, tryPrependWithSystemFile);
+    }
   }
 
   /**

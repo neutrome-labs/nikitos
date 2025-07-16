@@ -14,15 +14,56 @@ class ComplexBuilder {
   }
 
   /**
+   * Enhance existing panel content using Docker with Claude Code
+   * @param {Object} metadata - Panel metadata
+   * @param {string} userInput - User enhancement instructions only
+   * @param {BrowserWindow} panelWindow - The panel window to stream to
+   * @param {Function} tryPrependWithSystemFile - Function to add system prompts
+   * @returns {Promise<void>}
+   */
+  async enhance(metadata, userInput, panelWindow, tryPrependWithSystemFile) {
+    const containerId = `claude-code-enhance-${metadata.id}`;
+    const stdlibPath = path.join(app.getPath('userData'), 'stdlib');
+    const panelDir = path.join(stdlibPath, metadata.id);
+
+    try {
+      // Ensure panel directory exists
+      if (!fs.existsSync(panelDir)) {
+        fs.mkdirSync(panelDir, { recursive: true });
+      }
+
+      // Start Docker container with Claude Code
+      const containerPort = await this.startClaudeCodeContainer(containerId, panelDir);
+      
+      // Wait for container to be ready
+      await this.waitForContainer(containerPort);
+
+      // Send enhancement request to Claude Code via OpenAI-like API
+      await this.sendEnhancementRequestToClaudeCode(
+        containerPort, 
+        metadata, 
+        userInput, 
+        panelWindow, 
+        tryPrependWithSystemFile
+      );
+
+    } catch (error) {
+      console.error('Error in complex builder enhance:', error);
+      // Clean up container on error
+      await this.stopContainer(containerId);
+      throw error;
+    }
+  }
+
+  /**
    * Build a panel using Docker with Claude Code
    * @param {Object} metadata - Panel metadata from thinker
    * @param {string} request - Original user request
    * @param {BrowserWindow} panelWindow - The panel window to stream to
-   * @param {Function} savePanel - Function to save panel content
    * @param {Function} tryPrependWithSystemFile - Function to add system prompts
    * @returns {Promise<void>}
    */
-  async build(metadata, request, panelWindow, savePanel, tryPrependWithSystemFile) {
+  async build(metadata, request, panelWindow, tryPrependWithSystemFile) {
     const containerId = `claude-code-${metadata.id}`;
     const stdlibPath = path.join(app.getPath('userData'), 'stdlib');
     const panelDir = path.join(stdlibPath, metadata.id);
@@ -54,7 +95,6 @@ class ComplexBuilder {
         metadata, 
         request, 
         panelWindow, 
-        savePanel,
         tryPrependWithSystemFile
       );
 
@@ -85,6 +125,7 @@ class ComplexBuilder {
         '-p', `${port}:8000`, // Map container port 3000 to host port
         '-v', `${panelDir}:/app/workspace`, // Mount panel directory
         '-e', 'DEBUG_MODE=true',
+        '-e', 'MAX_TIMEOUT=6000000',
         '-e', 'CLAUDE_CWD=/app/workspace',
         '-e', `ANTHROPIC_API_KEY=${process.env.ANTHROPIC_AUTH_TOKEN}`,
         '-e', `ANTHROPIC_BASE_URL=${process.env.ANTHROPIC_BASE_URL}`,
@@ -157,25 +198,100 @@ class ComplexBuilder {
   }
 
   /**
-   * Send request to Claude Code container
+   * Send enhancement request to Claude Code container
    * @param {number} port - Container port
    * @param {Object} metadata - Panel metadata
-   * @param {string} request - Original user request
+   * @param {string} userInput - User enhancement instructions only
    * @param {BrowserWindow} panelWindow - Panel window
-   * @param {Function} savePanel - Save panel function
    * @param {Function} tryPrependWithSystemFile - System prompt function
    * @returns {Promise<void>}
    */
-  async sendRequestToClaudeCode(port, metadata, request, panelWindow, savePanel, tryPrependWithSystemFile) {
+  async sendEnhancementRequestToClaudeCode(port, metadata, userInput, panelWindow, tryPrependWithSystemFile) {
     try {
       const response = await fetch(`http://localhost:${port}/v1/chat/completions`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${process.env.ANTHROPIC_AUTH_TOKEN}`
         },
         body: JSON.stringify({
-          model: 'claude-3-7-sonnet-20250219',
+          model: process.env.COMPLEX_RENDERER_MODEL,
+          messages: tryPrependWithSystemFile(process.env.CLAUDE_CODE_SYSTEM_PROMPT, [
+            { role: 'user', content: userInput }
+          ]),
+          enable_tools: true,
+          stream: true
+        }),
+        signal: AbortSignal.timeout(1 * 60 * 60 * 1000) // 1 hour timeout
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('Error from Claude Code API:', errorText);
+        throw new Error(`Claude Code API error: ${response.status} - ${errorText}`);
+      }
+
+      // Stream the response
+      let content = '';
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        const chunk = decoder.decode(value);
+        const lines = chunk.split('\n');
+        
+        for (const line of lines) {
+          if (line.trim().startsWith('data: ')) {
+            const data = line.replace(/^data: /, '');
+            if (data.trim() === '[DONE]') {
+              // Finalize enhancement and reload panel
+              await this.finalizeEnhancement(metadata, content, panelWindow);
+              return;
+            }
+            
+            try {
+              const parsed = JSON.parse(data);
+              if (parsed.choices?.[0]?.delta?.content) {
+                const deltaContent = parsed.choices[0].delta.content;
+                content += deltaContent;
+                panelWindow.webContents.send('stream-data', deltaContent);
+              }
+            } catch (error) {
+              // Ignore JSON parse errors
+            }
+          }
+        }
+      }
+
+      // If we reach here without [DONE], finalize anyway
+      await this.finalizeEnhancement(metadata, content, panelWindow);
+
+    } catch (error) {
+      console.error('Error communicating with Claude Code for enhancement:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Send request to Claude Code container
+   * @param {number} port - Container port
+   * @param {Object} metadata - Panel metadata
+   * @param {string} request - Original user request
+   * @param {BrowserWindow} panelWindow - Panel window
+   * @param {Function} tryPrependWithSystemFile - System prompt function
+   * @returns {Promise<void>}
+   */
+  async sendRequestToClaudeCode(port, metadata, request, panelWindow, tryPrependWithSystemFile) {
+    try {
+      const response = await fetch(`http://localhost:${port}/v1/chat/completions`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: process.env.COMPLEX_RENDERER_MODEL,
           messages: tryPrependWithSystemFile(process.env.CLAUDE_CODE_SYSTEM_PROMPT, [
             { role: 'user', content: metadata.alpha },
             { role: 'user', content: request },
@@ -208,8 +324,8 @@ class ComplexBuilder {
           if (line.trim().startsWith('data: ')) {
             const data = line.replace(/^data: /, '');
             if (data.trim() === '[DONE]') {
-              // Save content and reload panel
-              await this.finalizePanel(metadata, content, panelWindow, savePanel);
+              // Finalize panel and reload
+              await this.finalizePanel(metadata, content, panelWindow);
               return;
             }
             
@@ -228,7 +344,7 @@ class ComplexBuilder {
       }
 
       // If we reach here without [DONE], finalize anyway
-      await this.finalizePanel(metadata, content, panelWindow, savePanel);
+      await this.finalizePanel(metadata, content, panelWindow);
 
     } catch (error) {
       console.error('Error communicating with Claude Code:', error);
@@ -237,11 +353,34 @@ class ComplexBuilder {
   }
 
   /**
-   * Get system prompt for Claude Code
-   * @returns {string}
+   * Finalize panel enhancement
+   * @param {Object} metadata - Panel metadata
+   * @param {string} content - Enhanced content
+   * @param {BrowserWindow} panelWindow - Panel window
+   * @returns {Promise<void>}
    */
-  getSystemPromptForClaudeCode() {
-    return ``;
+  async finalizeEnhancement(metadata, content, panelWindow) {
+    try {
+      // Load the panel
+      const stdlibPath = path.join(app.getPath('userData'), 'stdlib');
+      const htmlPath = path.join(stdlibPath, metadata.id, 'index.html');
+
+      // For complex builder, files are edited directly via Docker mount
+      // No need to save content as AI has already modified files
+      
+      // Load the entry point HTML file
+      panelWindow.loadFile(htmlPath);
+
+      // Notify that streaming is done
+      panelWindow.webContents.send('stream-end');
+      
+      // Clean up container after successful completion
+      await this.stopContainer(`claude-code-enhance-${metadata.id}`);
+      
+    } catch (error) {
+      console.error('Error finalizing enhancement:', error);
+      throw error;
+    }
   }
 
   /**
@@ -249,17 +388,16 @@ class ComplexBuilder {
    * @param {Object} metadata - Panel metadata
    * @param {string} content - Generated content
    * @param {BrowserWindow} panelWindow - Panel window
-   * @param {Function} savePanel - Save panel function
    * @returns {Promise<void>}
    */
-  async finalizePanel(metadata, content, panelWindow, savePanel) {
+  async finalizePanel(metadata, content, panelWindow) {
     try {
       // Load the panel
       const stdlibPath = path.join(app.getPath('userData'), 'stdlib');
       const htmlPath = path.join(stdlibPath, metadata.id, 'index.html');
 
-      // Save the generated content
-      savePanel(metadata.id, metadata, fs.existsSync(htmlPath) ? null : content);
+      // For complex builder, files are created directly via Docker mount
+      // No need to save content as AI has already created files
       
       // Load the entry point HTML file
       panelWindow.loadFile(htmlPath);
