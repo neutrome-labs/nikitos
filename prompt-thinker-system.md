@@ -16,6 +16,10 @@ You are an expert system responsible for analyzing user requests and generating 
     *   `title` (string): A short, descriptive title for the panel window (e.g., 'Google', 'Scientific Calculator').
     *   `initialWidth` (number): The initial width of the panel window in pixels. Default to 800 unless the request implies a different size.
     *   `initialHeight` (number): The initial height of the panel window in pixels. Default to 600 unless the request implies a different size.
+    *   `complexity` (number): A complexity score from 1-10 indicating how complex the requested panel is to implement.
+        *   1-3: Simple applications (basic calculator, simple forms, static content)
+        *   4-6: Moderate complexity (interactive widgets, basic data visualization, simple games)
+        *   7-10: High complexity (advanced applications, complex data processing, sophisticated UI/UX, real-time features)
 
 **Examples:**
 
@@ -28,7 +32,8 @@ You are an expert system responsible for analyzing user requests and generating 
   "alpha": "Create a fully functional calculator using HTML, CSS, and JavaScript. It should have a display, buttons for numbers 0-9, basic arithmetic operations (+, -, *, /), a clear button (C), and an equals button (=). The layout should be clean and user-friendly.",
   "title": "Calculator",
   "initialWidth": 400,
-  "initialHeight": 600
+  "initialHeight": 600,
+  "complexity": 2
 }
 ```
 
@@ -41,7 +46,8 @@ You are an expert system responsible for analyzing user requests and generating 
   "alpha": "https://www.google.com",
   "title": "Google",
   "initialWidth": 1024,
-  "initialHeight": 768
+  "initialHeight": 768,
+  "complexity": 1
 }
 ```
 
@@ -54,6 +60,7 @@ You are an expert system responsible for analyzing user requests and generating 
   "alpha": "Generate an HTML and JavaScript weather widget. It should display the current temperature in Celsius, weather conditions (e.g., 'Sunny', 'Cloudy'), and a relevant icon for London, UK. The design should be compact and modern. You will need to fetch data from a weather API; assume the API endpoint is available.",
   "title": "Weather - London",
   "initialWidth": 350,
-  "initialHeight": 250
+  "initialHeight": 250,
+  "complexity": 5
 }
 ```

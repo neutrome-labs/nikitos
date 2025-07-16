@@ -3,6 +3,10 @@ const path = require('path');
 const fs = require('fs');
 require('dotenv').config();
 
+// Import the builder factory
+const BuilderFactory = require('./builders/builder-factory');
+const builderFactory = new BuilderFactory();
+
 let mainWindow;
 let tray;
 
@@ -108,6 +112,16 @@ app.on('window-all-closed', function () {
   // Don't quit the app when all windows are closed, keep it running in tray
   if (process.platform === 'darwin') {
     app.dock.hide();
+  }
+});
+
+// Clean up builders when app is quitting
+app.on('before-quit', async () => {
+  console.log('App is quitting, cleaning up builders...');
+  try {
+    await builderFactory.cleanup();
+  } catch (error) {
+    console.error('Error during builder cleanup:', error);
   }
 });
 
@@ -219,6 +233,10 @@ function getPanelHtmlPath(panelId) {
 
 let systemPromptCache = {};
 function tryPrependWithSystemFile(systemPromptFile, messages) {
+  if (!systemPromptFile || systemPromptFile.length < 1) {
+    return messages;
+  }
+
   if (!systemPromptCache[systemPromptFile]) {
     try {
       const systemPromptPath = path.join(__dirname, systemPromptFile);
@@ -516,19 +534,20 @@ ipcMain.handle('add-panel', async (event, request) => {
     if (metadata.type === 'build') {
       const menuTemplate = [
         {
-          label: 'Edit',
-          submenu: [
-            {
-              label: 'Enhance',
-              click: () => {
-                const htmlPath = getPanelHtmlPath(metadata.id);
-                if (fs.existsSync(htmlPath)) {
-                  const currentContent = fs.readFileSync(htmlPath, 'utf8');
-                  createEnhanceWindow(metadata.id, currentContent);
-                }
-              }
+          label: 'Enhance',
+          click: () => {
+            const htmlPath = getPanelHtmlPath(metadata.id);
+            if (fs.existsSync(htmlPath)) {
+              const currentContent = fs.readFileSync(htmlPath, 'utf8');
+              createEnhanceWindow(metadata.id, currentContent);
             }
-          ]
+          }
+        },
+        {
+          label: 'DevTools',
+          click: () => {
+            panelWindow.webContents.openDevTools();
+          }
         }
       ];
       const menu = Menu.buildFromTemplate(menuTemplate);
@@ -562,57 +581,28 @@ ipcMain.handle('add-panel', async (event, request) => {
       `;
       panelWindow.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(loadingHTML)}`);
 
+      // Use the builder factory to handle panel creation based on complexity
       (async () => {
         try {
-          const response = await fetch(process.env.OPENAI_COMPLETIONS_URL, {
-            method: 'POST',
-            headers: {
-              'User-Agent': 'NeutromeLabs/AiGateway',
-              'Content-Type': 'application/json',
-              'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`
-            },
-            body: JSON.stringify({
-              model: process.env.OPENAI_RENDERER_FAST,
-              messages: tryPrependWithSystemFile(process.env.OPENAI_RENDERER_FAST_PROMPT, [
-                { role: 'user', content: request },
-                { role: 'user', content: metadata.alpha },
-              ]),
-              stream: true
-            })
-          });
-
-          if (!response.ok) {
-            console.error('Error fetching from renderer API:', await response.text());
-            throw new Error(`HTTP error! status: ${response.status}`);
-          }
-
-          let content = '';
-          for await (const chunk of response.body) {
-            const lines = new TextDecoder().decode(chunk).split('\n');
-            const filtered = lines.filter(line => line.trim().startsWith('data: '));
-            for (const line of filtered) {
-              const data = line.replace(/^data: /, '');
-              if (data.trim() === '[DONE]') {
-                // Save HTML content to file and navigate to it
-                savePanel(metadata.id, metadata, content);
-                const htmlPath = getPanelHtmlPath(metadata.id);
-                panelWindow.loadFile(htmlPath);
-                panelWindow.webContents.send('stream-end');
-                return;
-              }
-              try {
-                const { choices } = JSON.parse(data);
-                if (choices[0]?.delta?.content) {
-                  content += choices[0].delta.content;
-                  panelWindow.webContents.send('stream-data', choices[0].delta.content);
-                }
-              } catch (error) {
-                // ignore json parse errors
-              }
-            }
-          }
+          console.log(`Building panel with complexity: ${metadata.complexity || 'unknown'}`);
+          await builderFactory.build(metadata, request, panelWindow, savePanel, tryPrependWithSystemFile);
         } catch (error) {
-          console.error('Error fetching from API:', error);
+          console.error('Error building panel:', error);
+          // Show error in panel window
+          const errorHTML = `
+            <!DOCTYPE html>
+            <html style="height: 100%; margin: 0;">
+              <head><title>Error</title></head>
+              <body style="display: flex; justify-content: center; align-items: center; height: 100%; margin: 0; font-family: Arial, sans-serif; background: #f5f5f5;">
+                <div style="text-align: center; padding: 20px;">
+                  <h2 style="color: #e74c3c;">Error Building Panel</h2>
+                  <p style="color: #666;">${error.message}</p>
+                  <p style="color: #999; font-size: 12px;">Please try again or check the console for more details.</p>
+                </div>
+              </body>
+            </html>
+          `;
+          panelWindow.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(errorHTML)}`);
         }
       })();
     }
@@ -627,7 +617,14 @@ ipcMain.handle('add-panel', async (event, request) => {
 ipcMain.handle('save-content', (event, panelId, content) => {
   try {
     if (panels[panelId]) {
-      // Save HTML content to file
+      // Check if HTML file already exists - don't overwrite existing content
+      const htmlPath = getPanelHtmlPath(panelId);
+      if (fs.existsSync(htmlPath)) {
+        console.log('HTML file already exists for panel:', panelId, '- skipping save to prevent overwrite');
+        return true;
+      }
+      
+      // Save HTML content to file only if it doesn't exist
       savePanel(panelId, panels[panelId], content);
       console.log('Content saved for panel:', panelId);
       return true;
@@ -773,6 +770,12 @@ ipcMain.handle('reopen-applet', (event, appletId) => {
                   const currentContent = fs.readFileSync(htmlPath, 'utf8');
                   createEnhanceWindow(firstPanelId, currentContent);
                 }
+              }
+            },
+            {
+              label: 'DevTools',
+              click: () => {
+                panelWindow.webContents.openDevTools();
               }
             }
           ];
