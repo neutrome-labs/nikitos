@@ -1,7 +1,11 @@
 {
   "name": "nikitos",
-  "version": "1.0.0",
-  "description": "My Electron application",
+  "version": "0.0.0-alpha",
+  "description": "AI-first operating system. Your ideas, instantly interactive.",
+  "author": {
+    "name": "Roma B., Neutrome Labs",
+    "email": "romab@neutrome.dev"
+  },
   "main": "app/main.js",
   "type": "commonjs",
   "private": true,
@@ -26,7 +30,8 @@
     "start": "electron .",
     "dev": "bunx concurrently \"NODE_ENV=development bunx vite --port 5173\" \"NODE_ENV=development bunx electron .\"",
     "build": "vite build",
-    "postbuild": "electron-builder"
+    "release-linux": "electron-builder -l appimage",
+    "release-windows": "electron-builder -w portable"
   },
   "build": {
     "files": [
@@ -53,7 +58,6 @@
   },
   "os": [
     "win32",
-    "darwin",
     "linux"
   ]
 }
