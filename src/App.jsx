@@ -27,6 +27,7 @@ const App = () => {
   const panelId = urlParams.get('panelId');
   const title = urlParams.get('title');
   const errorMessage = urlParams.get('message');
+  const enhanceContent = urlParams.get('content');
 
   useEffect(() => {
     // Load applets from main process
@@ -251,6 +252,25 @@ const App = () => {
 
   if (mode === 'error') {
     return <ErrorScreen message={errorMessage} />;
+  }
+
+  if (mode === 'enhance') {
+    return (
+      <div style={{ 
+        height: '100vh', 
+        backgroundColor: '#1a1a1a', 
+        display: 'flex', 
+        alignItems: 'center', 
+        justifyContent: 'center' 
+      }}>
+        <EnhanceModal
+          isOpen={true}
+          onClose={() => window.close()}
+          panelId={panelId}
+          currentContent={enhanceContent}
+        />
+      </div>
+    );
   }
 
   return (

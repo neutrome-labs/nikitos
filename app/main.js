@@ -258,12 +258,29 @@ function tryPrependWithSystemFile(systemPromptFile, messages) {
     : messages;
 }
 
-// Trigger enhancement modal in React app
+// Create a separate enhancement window with React components
 function createEnhanceWindow(panelId, currentContent) {
-  // Instead of creating a new window, send message to main window to show modal
-  if (mainWindow) {
-    mainWindow.webContents.send('show-enhance-modal', { panelId, currentContent });
-  }
+  const enhanceWindow = new BrowserWindow({
+    width: 500,
+    height: 400,
+    title: 'Enhance Panel',
+    parent: mainWindow,
+    modal: true,
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.js'),
+      nodeIntegration: false,
+      contextIsolation: true,
+    }
+  });
+
+  // Load React app with enhance modal mode
+  const enhanceURL = `file://${path.join(__dirname, '../dist/index.html')}?mode=enhance&panelId=${panelId}&content=${encodeURIComponent(currentContent)}`;
+  enhanceWindow.loadURL(enhanceURL);
+
+  // Clean up
+  enhanceWindow.on('closed', () => {
+    enhanceWindow.destroy();
+  });
 }
 
 const panels = {};
