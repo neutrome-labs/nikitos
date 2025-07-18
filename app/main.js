@@ -258,184 +258,12 @@ function tryPrependWithSystemFile(systemPromptFile, messages) {
     : messages;
 }
 
-// Create enhancement window
+// Trigger enhancement modal in React app
 function createEnhanceWindow(panelId, currentContent) {
-  const enhanceWindow = new BrowserWindow({
-    width: 500,
-    height: 400,
-    title: 'Enhance Panel',
-    webPreferences: {
-      preload: path.join(__dirname, 'preload.js'),
-      nodeIntegration: false,
-      contextIsolation: true,
-    }
-  });
-
-  const enhanceHTML = `
-    <!DOCTYPE html>
-    <html style="height: 100%; margin: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;">
-      <head>
-        <title>Enhance Panel</title>
-        <style>
-          body {
-            margin: 0;
-            padding: 20px;
-            height: calc(100vh - 40px);
-            background: #1a1a1a;
-            color: #ffffff;
-            display: flex;
-            flex-direction: column;
-          }
-          .header {
-            margin-bottom: 20px;
-          }
-          .header h2 {
-            margin: 0 0 10px 0;
-            color: #ffffff;
-            font-size: 18px;
-          }
-          .header p {
-            margin: 0;
-            color: #9ca3af;
-            font-size: 14px;
-          }
-          .input-container {
-            flex: 1;
-            display: flex;
-            flex-direction: column;
-            margin-bottom: 20px;
-          }
-          textarea {
-            flex: 1;
-            background: #2d2d2d;
-            border: 1px solid #404040;
-            border-radius: 8px;
-            color: #ffffff;
-            padding: 15px;
-            font-size: 14px;
-            font-family: inherit;
-            resize: none;
-            outline: none;
-          }
-          textarea:focus {
-            border-color: #2563eb;
-          }
-          textarea::placeholder {
-            color: #9ca3af;
-          }
-          .button-container {
-            display: flex;
-            gap: 10px;
-            justify-content: flex-end;
-          }
-          button {
-            padding: 10px 20px;
-            border: none;
-            border-radius: 6px;
-            font-size: 14px;
-            cursor: pointer;
-            font-family: inherit;
-          }
-          .cancel-btn {
-            background: #374151;
-            color: #ffffff;
-          }
-          .cancel-btn:hover {
-            background: #4b5563;
-          }
-          .enhance-btn {
-            background: #2563eb;
-            color: #ffffff;
-          }
-          .enhance-btn:hover {
-            background: #1d4ed8;
-          }
-          .enhance-btn:disabled {
-            background: #374151;
-            cursor: not-allowed;
-          }
-          .loading {
-            display: none;
-            align-items: center;
-            gap: 10px;
-            color: #9ca3af;
-            font-size: 14px;
-          }
-          .spinner {
-            width: 16px;
-            height: 16px;
-            border: 2px solid #374151;
-            border-top: 2px solid #2563eb;
-            border-radius: 50%;
-            animation: spin 1s linear infinite;
-          }
-          @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
-          }
-        </style>
-      </head>
-      <body>
-        <div class="header">
-          <h2>Enhance Panel</h2>
-          <p>Describe how you want to improve the current panel content</p>
-        </div>
-        
-        <div class="input-container">
-          <textarea 
-            id="enhanceInput" 
-            placeholder="Enter your enhancement instructions here..."
-            autofocus
-          ></textarea>
-        </div>
-        
-        <div class="loading" id="loadingIndicator">
-          <div class="spinner"></div>
-          <span>Enhancing panel...</span>
-        </div>
-        
-        <div class="button-container">
-          <button class="cancel-btn" onclick="window.close()">Cancel</button>
-          <button class="enhance-btn" id="enhanceBtn" onclick="enhancePanel()">Enhance</button>
-        </div>
-
-        <script>
-          const panelId = '${panelId}';
-          
-          function enhancePanel() {
-            const input = document.getElementById('enhanceInput');
-            const enhanceBtn = document.getElementById('enhanceBtn');
-            const loadingIndicator = document.getElementById('loadingIndicator');
-            
-            if (!input.value.trim()) return;
-            
-            enhanceBtn.disabled = true;
-            loadingIndicator.style.display = 'flex';
-            
-            window.electronAPI.enhancePanel(panelId, input.value.trim())
-              .then(() => {
-                window.close();
-              })
-              .catch((error) => {
-                console.error('Enhancement failed:', error);
-                enhanceBtn.disabled = false;
-                loadingIndicator.style.display = 'none';
-                alert('Enhancement failed. Please try again.');
-              });
-          }
-          
-          // Allow Enter+Ctrl to submit
-          document.getElementById('enhanceInput').addEventListener('keydown', (e) => {
-            if (e.ctrlKey && e.key === 'Enter') {
-              enhancePanel();
-            }
-          });
-        </script>
-      </body>
-    </html>
-  `;
-
-  enhanceWindow.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(enhanceHTML)}`);
+  // Instead of creating a new window, send message to main window to show modal
+  if (mainWindow) {
+    mainWindow.webContents.send('show-enhance-modal', { panelId, currentContent });
+  }
 }
 
 const panels = {};
@@ -562,29 +390,9 @@ ipcMain.handle('add-panel', async (event, request) => {
     if (metadata.type === 'web') {
       panelWindow.loadURL(metadata.alpha);
     } else {
-      const loadingHTML = `
-        <!DOCTYPE html>
-        <html style="height: 100%; margin: 0; overflow: hidden;">
-          <head>
-            <title>${metadata.title}</title>
-            <script>
-              let rawData = '';
-              const panelId = '${metadata.id}';
-              window.electronAPI.onStreamData((data) => {
-                rawData += data;
-                document.body.innerText = rawData;
-              });
-              window.electronAPI.onStreamEnd(() => {
-                window.electronAPI.saveContent(panelId, rawData);
-              });
-            </script>
-          </head>
-          <body style="display: flex; justify-content: center; align-items: center; height: 100%; margin: 0;">
-            <h1>Loading...</h1>
-          </body>
-        </html>
-      `;
-      panelWindow.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(loadingHTML)}`);
+      // Load the React app with loading state
+      const loadingURL = `file://${path.join(__dirname, '../dist/index.html')}?mode=loading&panelId=${metadata.id}&title=${encodeURIComponent(metadata.title)}`;
+      panelWindow.loadURL(loadingURL);
 
       // Use the builder factory to handle panel creation based on complexity
       (async () => {
@@ -593,21 +401,9 @@ ipcMain.handle('add-panel', async (event, request) => {
           await builderFactory.build(metadata, request, panelWindow, tryPrependWithSystemFile);
         } catch (error) {
           console.error('Error building panel:', error);
-          // Show error in panel window
-          const errorHTML = `
-            <!DOCTYPE html>
-            <html style="height: 100%; margin: 0;">
-              <head><title>Error</title></head>
-              <body style="display: flex; justify-content: center; align-items: center; height: 100%; margin: 0; font-family: Arial, sans-serif; background: #f5f5f5;">
-                <div style="text-align: center; padding: 20px;">
-                  <h2 style="color: #e74c3c;">Error Building Panel</h2>
-                  <p style="color: #666;">${error.message}</p>
-                  <p style="color: #999; font-size: 12px;">Please try again or check the console for more details.</p>
-                </div>
-              </body>
-            </html>
-          `;
-          panelWindow.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(errorHTML)}`);
+          // Show error in panel window using React component
+          const errorURL = `file://${path.join(__dirname, '../dist/index.html')}?mode=error&message=${encodeURIComponent(error.message)}`;
+          panelWindow.loadURL(errorURL);
         }
       })();
     }
@@ -823,18 +619,9 @@ ipcMain.handle('reopen-applet', (event, appletId) => {
           if (fs.existsSync(htmlPath)) {
             panelWindow.loadFile(htmlPath);
           } else {
-            // Simple panel without content TODO this should not be called ever
-            const simpleHTML = `
-              <!DOCTYPE html>
-              <html>
-                <head><title>${panel.name || applet.caption}</title></head>
-                <body style="font-family: Arial, sans-serif; padding: 20px; background: #f5f5f5;">
-                  <h1>${panel.name || applet.caption}</h1>
-                  <p>This is a simple panel. Content will be added here.</p>
-                </body>
-              </html>
-            `;
-            panelWindow.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(simpleHTML)}`);
+            // Load React app with loading state if no content exists
+            const loadingURL = `file://${path.join(__dirname, '../dist/index.html')}?mode=loading&title=${encodeURIComponent(panel.name || applet.caption)}`;
+            panelWindow.loadURL(loadingURL);
           }
         }
         
@@ -924,4 +711,21 @@ ipcMain.handle('import-panel', (event, panelId) => {
     console.error('Error importing panel:', error);
     return { error: error.message };
   }
+});
+
+// Handle app visibility toggle for tray menu
+ipcMain.handle('toggle-visibility', () => {
+  if (mainWindow) {
+    if (mainWindow.isVisible()) {
+      mainWindow.hide();
+    } else {
+      showWindowNearTray();
+    }
+  }
+});
+
+// Handle app exit for tray menu
+ipcMain.handle('exit-app', () => {
+  app.isQuiting = true;
+  app.quit();
 });

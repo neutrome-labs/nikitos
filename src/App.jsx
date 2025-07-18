@@ -1,5 +1,9 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Plus, Grid3X3, Send, X, Download, ChevronDown } from 'lucide-react';
+import EnhanceModal from './components/EnhanceModal';
+import TrayMenu from './components/TrayMenu';
+import LoadingScreen from './components/LoadingScreen';
+import ErrorScreen from './components/ErrorScreen';
 
 const App = () => {
   const [applets, setApplets] = useState([]);
@@ -8,9 +12,21 @@ const App = () => {
   const [availablePanels, setAvailablePanels] = useState([]);
   const [showImportDropdown, setShowImportDropdown] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
+  const [showEnhanceModal, setShowEnhanceModal] = useState(false);
+  const [enhancePanelId, setEnhancePanelId] = useState(null);
+  const [enhancePanelContent, setEnhancePanelContent] = useState('');
+  const [showTrayMenu, setShowTrayMenu] = useState(false);
+  const [trayMenuPosition, setTrayMenuPosition] = useState({ x: 0, y: 0 });
   const canvasRef = useRef(null);
   const animationFrameId = useRef(null);
   const importDropdownRef = useRef(null);
+
+  // Check URL parameters for special modes
+  const urlParams = new URLSearchParams(window.location.search);
+  const mode = urlParams.get('mode');
+  const panelId = urlParams.get('panelId');
+  const title = urlParams.get('title');
+  const errorMessage = urlParams.get('message');
 
   useEffect(() => {
     // Load applets from main process
@@ -18,6 +34,13 @@ const App = () => {
       console.log('Received applets update:', newApplets);
       setApplets(newApplets);
     });
+
+    // Listen for enhance modal requests
+    if (window.electronAPI && window.electronAPI.onShowEnhanceModal) {
+      window.electronAPI.onShowEnhanceModal(({ panelId, currentContent }) => {
+        handleEnhancePanel(panelId, currentContent);
+      });
+    }
 
     // Request initial applets
     window.electronAPI.getApplets();
@@ -176,6 +199,41 @@ const App = () => {
     }
   };
 
+  // Handlers for new components
+  const handleEnhancePanel = (panelId, content) => {
+    setEnhancePanelId(panelId);
+    setEnhancePanelContent(content);
+    setShowEnhanceModal(true);
+  };
+
+  const handleCloseEnhanceModal = () => {
+    setShowEnhanceModal(false);
+    setEnhancePanelId(null);
+    setEnhancePanelContent('');
+  };
+
+  const handleShowTrayMenu = (event) => {
+    event.preventDefault();
+    setTrayMenuPosition({ x: event.clientX, y: event.clientY });
+    setShowTrayMenu(true);
+  };
+
+  const handleCloseTrayMenu = () => {
+    setShowTrayMenu(false);
+  };
+
+  const handleShowHideApp = () => {
+    if (window.electronAPI && window.electronAPI.toggleVisibility) {
+      window.electronAPI.toggleVisibility();
+    }
+  };
+
+  const handleExitApp = () => {
+    if (window.electronAPI && window.electronAPI.exitApp) {
+      window.electronAPI.exitApp();
+    }
+  };
+
   // Transform applets to match the display format
   const displayApplets = applets.filter(applet => applet && applet.caption).map(applet => {
     return {
@@ -186,15 +244,27 @@ const App = () => {
     };
   });
 
+  // Handle special modes
+  if (mode === 'loading') {
+    return <LoadingScreen title={title || 'Loading...'} panelId={panelId} />;
+  }
+
+  if (mode === 'error') {
+    return <ErrorScreen message={errorMessage} />;
+  }
+
   return (
-    <div style={{
-      height: '100vh',
-      backgroundColor: '#000000',
-      color: '#ffffff',
-      position: 'relative',
-      overflow: 'hidden',
-      boxSizing: 'border-box'
-    }}>
+    <div 
+      style={{
+        height: '100vh',
+        backgroundColor: '#000000',
+        color: '#ffffff',
+        position: 'relative',
+        overflow: 'hidden',
+        boxSizing: 'border-box'
+      }}
+      onContextMenu={handleShowTrayMenu}
+    >
       {/* Dotted background */}
       <canvas
         ref={canvasRef}
@@ -668,6 +738,23 @@ const App = () => {
           }
         }
       `}</style>
+
+      {/* Enhanced Modal */}
+      <EnhanceModal
+        isOpen={showEnhanceModal}
+        onClose={handleCloseEnhanceModal}
+        panelId={enhancePanelId}
+        currentContent={enhancePanelContent}
+      />
+
+      {/* Tray Menu */}
+      <TrayMenu
+        isOpen={showTrayMenu}
+        onClose={handleCloseTrayMenu}
+        onShowHide={handleShowHideApp}
+        onExit={handleExitApp}
+        position={trayMenuPosition}
+      />
     </div>
   );
 };

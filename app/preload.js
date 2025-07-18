@@ -17,8 +17,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
   
   // Enhancement feature
   enhancePanel: (panelId, userInput) => ipcRenderer.invoke('enhance-panel', panelId, userInput),
+  onShowEnhanceModal: (callback) => ipcRenderer.on('show-enhance-modal', (_event, data) => callback(data)),
   
   // Import functionality
   getAvailablePanels: () => ipcRenderer.invoke('get-available-panels'),
-  importPanel: (panelId) => ipcRenderer.invoke('import-panel', panelId)
+  importPanel: (panelId) => ipcRenderer.invoke('import-panel', panelId),
+  
+  // App control for tray menu
+  toggleVisibility: () => ipcRenderer.invoke('toggle-visibility'),
+  exitApp: () => ipcRenderer.invoke('exit-app')
 });
