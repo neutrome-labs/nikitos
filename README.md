@@ -1,15 +1,15 @@
-# NikitOS
+# NikitOS Core
 
 **Build what you need, when you need it.**
 
-Tired of juggling apps? NikitOS changes how you use your computer. Instead of being stuck with pre-built software, you just describe what you want to do. The system then generates a custom "panel"—anything from a simple tool to a complex app—tailored to your task.
+Instead of being stuck with pre-built software, you just describe what you want to do. The system then generates a custom "app" - anything from a simple tool to a complex app - tailored to your task.
 
-It’s a fluid, adaptive workspace that molds to you, not the other way around.
+It's a fluid, adaptive workspace that molds to you, not the other way around.
 
 ## How It Works
 
 *   **Speak Your Mind:** Use plain English to describe the tool you need (e.g., "a simple pomodoro timer" or "a kanban board for my project").
-*   **Instant Tools:** AI generates a custom interface (a "panel") on the fly. No more hunting for the right app.
+*   **Instant Tools:** AI generates a custom interface (an "applet") on the fly. No more hunting for the right app.
 *   **Always Improving:** The system learns from you. You can also ask the AI to tweak or add features to any panel you've made.
 *   **Connected Workspace:** Your panels can work together, sharing information to create a seamless workflow.
 
@@ -20,34 +20,27 @@ It’s a fluid, adaptive workspace that molds to you, not the other way around.
 | **Core System** | Lightweight tray app to create, manage, and organize your panels. | ✅ Available |
 | **Web Panels** | Turn any website into a clean, native-like panel. | ✅ Available |
 | **AI-Built Panels**| Describe an interface and watch AI build it instantly with HTML/CSS/JS. | ✅ Available |
-| **Native Flutter Panels**| Generate high-performance, native apps from a description. | 🚧 In Progress |
+| **Native Flutter Panels**| Generate high-performance, native apps from a description. | ✅ Beta |
 | **Marketplace** | Share your panels and browse tools made by the community. | 🚧 In Progress |
 
 ## Installation
 
-**Prerequisites:**
-*   Node.js 18+ (or Bun)
-*   An OpenAI API key
+0. Install flutter
 
 **Setup:**
 ```bash
 # Clone the repo
-git clone https://github.com/theuargb/nikitos.git
+git clone https://github.com/neutrome-labs/nikitos.git
 cd nikitos
 
 # Install dependencies
 bun install  # or npm install
 
 # Set up your environment
-cp .env.example .env # Then add your OpenAI API key to the .env file
-
-# Download `stdlib` (if applicable)
-git clone git@github.com:neutrome-labs/nikitos-stdlib.git ~/.config/nikitos/stdlib
-# on Windows
-git clone git@github.com:neutrome-labs/nikitos-stdlib.git %AppData%\\nikitos\\stdlib
+cp .env.example .env # Then add your AI keys here
 
 # Run the app
-bun run dev # or npm run dev
+flutter run -d linux # or windows
 ```
 
 ## Getting Started
@@ -61,7 +54,6 @@ bun run dev # or npm run dev
 
 | Timeline | Goal |
 | :--- | :--- |
-| **Q3 2025** | Flutter/Native panel generation |
 | **Q4 2025** | Community marketplace launch |
 | **Q2 2026** | Enterprise features and team collaboration |
 
