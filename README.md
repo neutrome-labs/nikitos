@@ -33,14 +33,11 @@ It's a fluid, adaptive workspace that molds to you, not the other way around.
 git clone https://github.com/neutrome-labs/nikitos.git
 cd nikitos
 
-# Install dependencies
-bun install  # or npm install
-
 # Set up your environment
 cp .env.example .env # Then add your AI keys here
 
 # Run the app
-flutter run -d linux # or windows
+flutter run -d linux # -d windows
 ```
 
 ## Getting Started
